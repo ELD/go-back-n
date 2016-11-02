@@ -1,12 +1,12 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <strings.h>
 #include <iostream>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "simulator.h"
 
 // ***********************************************************
-// ** If you want to define other fucntions, put them here.
+// ** If you want to define other functions, put them here.
 // ***********************************************************
 void A_init();
 void B_init();
@@ -21,5 +21,5 @@ void A_timerinterrupt();
 void B_timerinterrupt();
 
 // ***********************************************************
-// ** If you want to define other fucntions, put them here.
+// ** If you want to define other functions, put them here.
 // ***********************************************************

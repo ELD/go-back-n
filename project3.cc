@@ -14,22 +14,20 @@
      (although some can be lost).
 **********************************************************************/
 
-simulator *simulation;
+simulator *const simulation = new simulator;
 
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(struct msg message)
 {
-    std::cout << "A side has recieved a message from the application that should be sent to side B: " << message.data
-              << std::endl;
+    std::cout << "A side has recieved a message from the application that should be sent to side B: "
+              << std::string(message.data) << std::endl;
 
+    simulation->starttimer(A, 20);
     struct pkt packet;
     packet.seqnum = 1;
     packet.acknum = 1;
     packet.checksum = 1;
-    std::memcpy(packet.payload, message.data, 19);
-    packet.payload[19] = '\0';
-
-    std::cout << "Message payload: " << packet.payload << '\0' << std::endl;
+    std::memcpy(packet.payload, message.data, 20);
 
     simulation->tolayer3(A, packet);
 }
@@ -67,11 +65,8 @@ void B_timerinterrupt() { std::cout << "Side B's timer has gone off " << std::en
 /* entity B routines are called. You can use it to do any initialization */
 void B_init() {}
 
-int main(int argc, char **argv)
+int main()
 {
-
-    simulation = new simulator;
-
     A_init();
     B_init();
     simulation->go();
