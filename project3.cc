@@ -16,9 +16,12 @@
 
 simulator *const simulation = new simulator;
 std::deque<struct msg> msg_buffer;
-bool received_ack;
-int next_expected_ack;
+bool received_prev_ack;
+int a_next_seq;
 float timeout;
+
+int b_next_seq;
+struct pkt prev_ack;
 
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(struct msg message)
@@ -28,21 +31,22 @@ void A_output(struct msg message)
 
     msg_buffer.emplace_back(message);
 
-    if (received_ack) {
+    if (received_prev_ack) {
         struct msg msg_to_send = msg_buffer.front();
 
         std::cout << "Sending message: " << msg_to_send << std::endl;
 
         struct pkt packet;
-        packet.seqnum = next_expected_ack;
+        packet.seqnum = a_next_seq;
         packet.acknum = 0;
-        packet.checksum = 0;
-        std::memcpy(packet.payload, msg_to_send.data, 20);
+        std::memcpy(packet.payload, msg_to_send.data, sizeof(msg_to_send.data));
+
+        packet.checksum = calc_checksum(packet);
 
         simulation->tolayer3(A, packet);
         simulation->starttimer(A, timeout);
 
-        received_ack = false;
+        received_prev_ack = false;
     }
 }
 
@@ -60,10 +64,10 @@ void A_input(struct pkt packet)
     // If it is, stop the timer, otherwise, continue waiting
     // Once the right ACK has been received, pop that packet off the queue
 
-    if (packet.acknum == next_expected_ack) {
-        received_ack = true;
+    if (packet.seqnum == a_next_seq && packet.acknum == 1 && packet.checksum == calc_checksum(packet)) {
+        received_prev_ack = true;
         simulation->stoptimer(A);
-        next_expected_ack = flip_next_ack(next_expected_ack);
+        a_next_seq = flip_next_seq(a_next_seq);
 
         auto msg = msg_buffer.front();
         msg_buffer.pop_front();
@@ -81,10 +85,11 @@ void A_timerinterrupt()
     struct msg message = msg_buffer.front();
     struct pkt packet;
 
-    packet.seqnum = next_expected_ack;
+    packet.seqnum = a_next_seq;
     packet.acknum = 0;
-    packet.checksum = 0;
     std::memcpy(packet.payload, message.data, 20);
+
+    packet.checksum = calc_checksum(packet);
 
     std::cout << "Resending packet: " << packet << std::endl;
 
@@ -96,8 +101,8 @@ void A_timerinterrupt()
 /* entity A routines are called. You can use it to do any initialization */
 void A_init()
 {
-    received_ack = true;
-    next_expected_ack = 0;
+    received_prev_ack = true;
+    a_next_seq = 0;
     timeout = 20.0;
 }
 
@@ -107,13 +112,26 @@ void B_input(struct pkt packet)
     std::cout << "B side has recieved a packet sent over the network from side A:" << packet << std::endl;
     simulation->tolayer5(B, packet.payload);
 
-    // TODO: Send the ACK packet back to side A
-    struct pkt ack_packet;
-    ack_packet.seqnum = packet.seqnum;
-    ack_packet.acknum = packet.seqnum;
-    ack_packet.checksum = packet.checksum;
+    // If fine, send ACK packet for that ACK
+    // Else, send last ACK
+    std::cout << "Expected to get seqnum: " << b_next_seq << std::endl;
+    if (packet.checksum == calc_checksum(packet) && packet.seqnum == b_next_seq) {
+        std::cout << "No corruption detected" << std::endl;
+        struct pkt ack_packet;
+        ack_packet.seqnum = packet.seqnum;
+        ack_packet.acknum = 1;
+        std::memcpy(ack_packet.payload, packet.payload, sizeof(packet.payload));
 
-    simulation->tolayer3(B, ack_packet);
+        ack_packet.checksum = calc_checksum(ack_packet);
+
+        prev_ack = ack_packet;
+
+        simulation->tolayer3(B, ack_packet);
+        b_next_seq = flip_next_seq(b_next_seq);
+    }
+    else {
+        simulation->tolayer3(B, prev_ack);
+    }
 }
 
 /* called when B's timer goes off */
@@ -121,16 +139,30 @@ void B_timerinterrupt() { std::cout << "Side B's timer has gone off " << std::en
 
 /* the following rouytine will be called once (only) before any other */
 /* entity B routines are called. You can use it to do any initialization */
-void B_init() {}
+void B_init() { b_next_seq = 0; }
 
-int flip_next_ack(int &next_expected_ack)
+int flip_next_seq(int &a_next_seq)
 {
-    if (next_expected_ack == 0) {
+    if (a_next_seq == 0) {
         return 1;
     }
     else {
         return 0;
     }
+}
+
+int calc_checksum(struct pkt &packet)
+{
+    int checksum = 0;
+
+    checksum += packet.acknum;
+    checksum += packet.seqnum;
+
+    for (auto c : packet.payload) {
+        checksum += c;
+    }
+
+    return checksum;
 }
 
 std::ostream &operator<<(std::ostream &os, const struct msg &message)

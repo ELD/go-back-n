@@ -21,7 +21,8 @@ void B_input(struct pkt packet);
 void A_timerinterrupt();
 void B_timerinterrupt();
 
-int flip_next_ack(int &);
+int flip_next_seq(int &);
+int calc_checksum(struct pkt &);
 
 std::ostream &operator<<(std::ostream &, const struct msg &);
 std::ostream &operator<<(std::ostream &, const struct pkt &);
