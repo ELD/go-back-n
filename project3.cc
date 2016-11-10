@@ -130,6 +130,7 @@ void B_input(struct pkt packet)
         b_next_seq = flip_next_seq(b_next_seq);
     }
     else {
+        std::cout << "Transmitting previous ack: " << prev_ack << std::endl;
         simulation->tolayer3(B, prev_ack);
     }
 }
