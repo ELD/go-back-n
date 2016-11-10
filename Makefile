@@ -8,15 +8,15 @@
 
 CXX = g++
 LD = g++
-CXXFLAGS = -g
-LDFLAGS = -g 
+CXXFLAGS = -g -std=c++14
+LDFLAGS = -g
 
 #
 # You should be able to add object files here without changing anything else
 #
 OBJ_FILES = simulator.o project3.o
 
-project3: ${OBJ_FILES} 
+project3: ${OBJ_FILES}
 	${LD} ${LDFLAGS} ${OBJ_FILES} -o $@ ${LIBRARYS}
 
 #
