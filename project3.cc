@@ -15,12 +15,13 @@
 **********************************************************************/
 
 simulator *const simulation = new simulator;
-std::deque<struct msg> msg_buffer;
-bool received_prev_ack;
-int a_next_seq;
+std::deque<struct pkt> pkt_buffer;
+int base;
+int a_next_seq_num;
+int window_size;
 float timeout;
 
-int b_next_seq;
+int b_expected_seq;
 struct pkt prev_ack;
 
 /* called from layer 5, passed the data to be sent to other side */
@@ -29,24 +30,24 @@ void A_output(struct msg message)
     std::cout << "A side has recieved a message from the application that should be sent to side B: " << message
               << std::endl;
 
-    msg_buffer.emplace_back(message);
-
-    if (received_prev_ack) {
-        struct msg msg_to_send = msg_buffer.front();
-
-        std::cout << "Sending message: " << msg_to_send << std::endl;
-
+    if (a_next_seq_num < base + window_size) {
         struct pkt packet;
-        packet.seqnum = a_next_seq;
+        packet.seqnum = a_next_seq_num;
         packet.acknum = 0;
-        std::memcpy(packet.payload, msg_to_send.data, sizeof(msg_to_send.data));
-
+        std::memcpy(packet.payload, message.data, sizeof(message.data));
         packet.checksum = calc_checksum(packet);
 
-        simulation->tolayer3(A, packet);
-        simulation->starttimer(A, timeout);
+        pkt_buffer.emplace_back(packet);
 
-        received_prev_ack = false;
+        std::cout << "Transmitting: " << packet << std::endl;
+
+        simulation->tolayer3(A, packet);
+
+        if (base == a_next_seq_num) {
+            simulation->starttimer(A, timeout);
+        }
+
+        a_next_seq_num++;
     }
 }
 
@@ -60,19 +61,13 @@ void B_output(struct msg message) /* need be completed only for extra credit */
 void A_input(struct pkt packet)
 {
     std::cout << "A side has recieved a packet sent over the network from side B:" << packet << std::endl;
-    // TODO: Receive an ACK from side B, check if ACK num is the expected one
-    // If it is, stop the timer, otherwise, continue waiting
-    // Once the right ACK has been received, pop that packet off the queue
 
-    if (packet.seqnum == a_next_seq && packet.acknum == 1 && packet.checksum == calc_checksum(packet)) {
-        received_prev_ack = true;
+    if (packet.checksum == calc_checksum(packet)) {
+        base = packet.acknum + 1;
         simulation->stoptimer(A);
-        a_next_seq = flip_next_seq(a_next_seq);
-
-        auto msg = msg_buffer.front();
-        msg_buffer.pop_front();
-
-        std::cout << "Getting rid of previously buffered message: " << msg << std::endl;
+        if (base != a_next_seq_num) {
+            simulation->starttimer(A, timeout);
+        }
     }
 }
 
@@ -80,29 +75,23 @@ void A_input(struct pkt packet)
 void A_timerinterrupt()
 {
     std::cout << "Side A's timer has gone off " << std::endl;
-    // TODO: On timeout, resend the last packet
-
-    struct msg message = msg_buffer.front();
-    struct pkt packet;
-
-    packet.seqnum = a_next_seq;
-    packet.acknum = 0;
-    std::memcpy(packet.payload, message.data, 20);
-
-    packet.checksum = calc_checksum(packet);
-
-    std::cout << "Resending packet: " << packet << std::endl;
-
-    simulation->tolayer3(A, packet);
     simulation->starttimer(A, timeout);
+    for (int i = base; i < a_next_seq_num; ++i) {
+        auto pkt = pkt_buffer[i];
+
+        std::cout << "Retransmitting: " << pkt << std::endl;
+
+        simulation->tolayer3(A, pkt);
+    }
 }
 
 /* the following routine will be called once (only) before any other */
 /* entity A routines are called. You can use it to do any initialization */
 void A_init()
 {
-    received_prev_ack = true;
-    a_next_seq = 0;
+    base = 0;
+    a_next_seq_num = 0;
+    window_size = 20;
     timeout = 20.0;
 }
 
@@ -110,28 +99,21 @@ void A_init()
 void B_input(struct pkt packet)
 {
     std::cout << "B side has recieved a packet sent over the network from side A:" << packet << std::endl;
-    simulation->tolayer5(B, packet.payload);
 
-    // If fine, send ACK packet for that ACK
-    // Else, send last ACK
-    std::cout << "Expected to get seqnum: " << b_next_seq << std::endl;
-    if (packet.checksum == calc_checksum(packet) && packet.seqnum == b_next_seq) {
-        std::cout << "No corruption detected" << std::endl;
+    if (packet.checksum == calc_checksum(packet) && b_expected_seq == packet.seqnum) {
+        simulation->tolayer5(B, packet.payload);
+
         struct pkt ack_packet;
-        ack_packet.seqnum = packet.seqnum;
-        ack_packet.acknum = 1;
-        std::memcpy(ack_packet.payload, packet.payload, sizeof(packet.payload));
 
+        ack_packet.seqnum = b_expected_seq;
+        ack_packet.acknum = b_expected_seq;
+        std::memcpy(ack_packet.payload, packet.payload, sizeof(packet.payload));
         ack_packet.checksum = calc_checksum(ack_packet);
 
         prev_ack = ack_packet;
 
         simulation->tolayer3(B, ack_packet);
-        b_next_seq = flip_next_seq(b_next_seq);
-    }
-    else {
-        std::cout << "Transmitting previous ack: " << prev_ack << std::endl;
-        simulation->tolayer3(B, prev_ack);
+        b_expected_seq++;
     }
 }
 
@@ -140,7 +122,7 @@ void B_timerinterrupt() { std::cout << "Side B's timer has gone off " << std::en
 
 /* the following rouytine will be called once (only) before any other */
 /* entity B routines are called. You can use it to do any initialization */
-void B_init() { b_next_seq = 0; }
+void B_init() { b_expected_seq = 0; }
 
 int flip_next_seq(int &a_next_seq)
 {

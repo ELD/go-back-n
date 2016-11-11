@@ -23,6 +23,7 @@ void B_timerinterrupt();
 
 int flip_next_seq(int &);
 int calc_checksum(struct pkt &);
+void send_packet(struct msg &);
 
 std::ostream &operator<<(std::ostream &, const struct msg &);
 std::ostream &operator<<(std::ostream &, const struct pkt &);
